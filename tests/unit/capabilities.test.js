@@ -55,4 +55,14 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  it("uses CodeBuddy CN's OpenAI reasoning transport for GLM-5.3", () => {
+    expect(getCapabilitiesForModel("codebuddy-cn", "glm-5.3")).toMatchObject({
+      reasoning: true,
+      thinkingFormat: "openai",
+      thinkingCanDisable: false,
+      contextWindow: 200000,
+      maxOutput: 128000,
+    });
+  });
 });
