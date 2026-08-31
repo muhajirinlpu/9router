@@ -65,4 +65,15 @@ describe("getCapabilitiesForModel", () => {
       maxOutput: 128000,
     });
   });
+
+  it("uses CodeBuddy CN's OpenAI reasoning transport for GLM-5.3-Flash", () => {
+    expect(getCapabilitiesForModel("codebuddy-cn", "glm-5.3-flash")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      thinkingFormat: "openai",
+      thinkingCanDisable: false,
+      contextWindow: 1000000,
+      maxOutput: 131072,
+    });
+  });
 });
