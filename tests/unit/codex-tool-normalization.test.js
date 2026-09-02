@@ -61,6 +61,69 @@ describe("CodexExecutor tool normalization", () => {
     expect(body.metadata).toBeUndefined();
   });
 
+  it("preserves explicit strict false on function tools", () => {
+    const parameters = {
+      type: "object",
+      properties: {
+        sessionID: { type: "string" },
+      },
+      required: [],
+      additionalProperties: false,
+    };
+
+    const tools = normalizeTools([
+      {
+        type: "function",
+        function: {
+          name: "subagent",
+          description: "Create or continue a child session",
+          parameters,
+          strict: false,
+        },
+      },
+    ]);
+
+    expect(tools).toEqual([
+      {
+        type: "function",
+        name: "subagent",
+        description: "Create or continue a child session",
+        parameters,
+        strict: false,
+      },
+    ]);
+  });
+
+  it("preserves explicit strict false on already-flat Responses function tools", () => {
+    const parameters = {
+      type: "object",
+      properties: {
+        sessionID: { type: "string" },
+      },
+      required: [],
+    };
+
+    const tools = normalizeTools([
+      {
+        type: "function",
+        name: "subagent",
+        description: "Create or continue a child session",
+        parameters,
+        strict: false,
+      },
+    ]);
+
+    expect(tools).toEqual([
+      {
+        type: "function",
+        name: "subagent",
+        description: "Create or continue a child session",
+        parameters,
+        strict: false,
+      },
+    ]);
+  });
+
   it("preserves Responses-native tool_search tools", () => {
     const tools = normalizeTools([
       {
