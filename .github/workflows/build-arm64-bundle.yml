@@ -1,0 +1,157 @@
+name: Build ARM64 release bundle
+
+# Offloads the Next.js production build off the Orange Pi (4 cores / 3.9 GB, where
+# the build OOM-kills) onto a native arm64 runner. Produces the same release-snapshot
+# tree that ~/9router-releases/<name>/ expects, so the existing systemd user unit,
+# cutover script and rollback path are unchanged.
+#
+# Native arm64 matters: the build embeds platform-specific binaries
+# (@next/swc-linux-arm64-gnu, @img/sharp-linux-arm64, lightningcss-linux-arm64-gnu,
+# @tailwindcss/oxide-linux-arm64-gnu, @unrs/resolver-binding-linux-arm64-gnu) and
+# `next build` must EXECUTE that SWC compiler, so x86 + emulation is not viable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label for the bundle (default: package.json version)"
+        required: false
+        type: string
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Must match the runtime value in ~/.config/systemd/user/9router.service so that any
+  # client-side inlining of NEXT_PUBLIC_* agrees with the running service on the Pi.
+  NEXT_PUBLIC_BASE_URL: "http://10.2.56.109:20128"
+
+jobs:
+  build:
+    name: Build + gate ARM64 bundle
+    # Native arm64 hosted runner (free for public repos).
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node (must match the Pi runtime)
+        uses: actions/setup-node@v7
+        with:
+          # ~/.config/systemd/user/9router.service pins this exact node binary.
+          # Do not bump without updating the unit.
+          node-version: "24.14.1"
+
+      - name: Cache npm downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: npm-arm64-${{ hashFiles('package.json') }}
+          restore-keys: npm-arm64-
+
+      # There is no package-lock.json upstream (checked on the Pi), so `npm ci` is
+      # unavailable by design here.
+      - name: Install root dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: |
+          set -euo pipefail
+          test -s .next/BUILD_ID
+          test -s custom-server.js
+          test -s .next/standalone/custom-server.js
+          test -d .next/standalone/.next/static
+          test -d .next/standalone/public
+          echo "BUILD_ID=$(cat .next/BUILD_ID)"
+
+      # The whole point of building here is arch correctness. Fail loudly if the
+      # runner ever resolves x86_64 bindings, because the Pi would refuse to load them.
+      - name: Guard - arm64 native bindings only
+        run: |
+          set -euo pipefail
+          echo "Native bindings found:"
+          find node_modules -name '*.node' | sed 's|^|  |'
+          arm=$(find node_modules -name '*arm64*.node' | wc -l)
+          x64=$(find node_modules \( -name '*x64*.node' -o -name '*x86_64*.node' \) | wc -l)
+          echo "arm64=$arm x64=$x64"
+          if [ "$x64" -ne 0 ]; then
+            echo "::error::x86_64 native bindings present - not runnable on the Pi"
+            exit 1
+          fi
+          if [ "$arm" -lt 4 ]; then
+            echo "::error::expected at least 4 arm64 bindings, found $arm"
+            exit 1
+          fi
+
+      # Proves the bundle actually boots and serves on arm64 before it is shipped to
+      # the Pi, rather than discovering a broken release during cutover.
+      - name: Smoke test - bundle boots and answers
+        run: |
+          set -euo pipefail
+          PORT=20128 HOSTNAME=127.0.0.1 DATA_DIR=/tmp/9r-smoke node custom-server.js > /tmp/smoke.log 2>&1 &
+          echo $! > /tmp/srv.pid
+          ok=0
+          for _ in $(seq 1 45); do
+            if curl -fsS --max-time 3 http://127.0.0.1:20128/api/version > /tmp/ver.json 2>/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          kill "$(cat /tmp/srv.pid)" 2>/dev/null || true
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::server never became ready"
+            tail -40 /tmp/smoke.log
+            exit 1
+          fi
+          echo "version endpoint: $(cat /tmp/ver.json)"
+          grep -q '"currentVersion"' /tmp/ver.json
+          tail -5 /tmp/smoke.log
+
+      # Focused gate: these cover the fork's own patches (CodeBuddy GLM-5.3 context
+      # windows / thinking format, Codex function-tool strict). The full suite is not
+      # all-green upstream by design (see tests/__baseline__/known-fails.txt), so it is
+      # deliberately not run here.
+      - name: Regression gate - fork patches
+        run: |
+          set -euo pipefail
+          cd tests && npm install --no-audit --no-fund
+          npx vitest run unit/capabilities.test.js unit/codex-tool-normalization.test.js
+
+      - name: Package release bundle
+        id: pack
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          [ -n "$VERSION" ] || VERSION="$(node -p "require('./package.json').version")"
+          SHA="$(git rev-parse --short HEAD)"
+          NAME="9router-v${VERSION}-arm64-${SHA}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+          # Same shape as a local release snapshot: root package.json + custom-server.js
+          # + .next (incl. standalone) + src/ + open-sse/ + public/ + node_modules.
+          tar czf "/tmp/${NAME}.tar.gz" \
+            --exclude='./.git' \
+            --exclude='./tests/node_modules' \
+            --exclude='./.next/cache' \
+            .
+          sha256sum "/tmp/${NAME}.tar.gz" > "/tmp/${NAME}.tar.gz.sha256"
+          cat "/tmp/${NAME}.tar.gz.sha256"
+          du -h "/tmp/${NAME}.tar.gz"
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.pack.outputs.name }}
+          path: |
+            /tmp/${{ steps.pack.outputs.name }}.tar.gz
+            /tmp/${{ steps.pack.outputs.name }}.tar.gz.sha256
+          retention-days: 14
+          compression-level: 0

@@ -18,33 +18,49 @@ export class CodeBuddyExecutor extends DefaultExecutor {
     const transformed = super.transformRequest(model, body, stream, credentials);
     transformed.stream = true;
 
-    // Tencent's content filter flags CLI agent system prompts ("You are Claude
-    // Code, Anthropic's official CLI...") as prompt injection / sensitive content
-    // and rejects the whole request. Detect agent system prompts (length catch-all
-    // + identity-marker regex) and replace them with a neutral one, while leaving
-    // legitimate user system prompts untouched. content may be a string or typed
-    // blocks ([{type:"text",text}]) depending on the incoming client format, so
-    // flatten before matching and preserve the original shape on replacement.
-    const NEUTRAL_PROMPT = "You are a helpful AI assistant that helps with software engineering tasks.";
-    const AGENT_PATTERN = /you are claude code|claude.?code.+official.+cli|anthropic.+official.+cli|anxthxropic.+official.+cli|you are (?:cursor|windsurf|cline|aider|continue|copilot|cody)|you are an? (?:ai )?(?:coding |code )?agent|cc_entrypoint\s*=\s*(?:cli|vscode|jetbrains|gui)|claude.?code.+issues|give feedback.+claude.?code|you are .{0,30}(?:powerful )?ai agent|orchestration capabilities|OhMyOpenCode|<agent-identity>|<Role>|<Behavior_Instructions>/i;
-    const flatten = (content) =>
-      typeof content === "string"
+    // CodeBuddy CN can reject some CLI-agent identity markers as sensitive
+    // content. Preserve the caller's system instructions (including long project
+    // rules): only redact the marker text that triggers the filter. Replacing an
+    // entire system message destroys project instructions and is not acceptable.
+    const AGENT_MARKERS = [
+      [/you are claude code/gi, "You are a coding assistant"],
+      [/claude.?code.+official.+cli/gi, "coding assistant CLI"],
+      [/anthropic.+official.+cli/gi, "coding assistant CLI"],
+      [/anxthxropic.+official.+cli/gi, "coding assistant CLI"],
+      [/you are (?:cursor|windsurf|cline|aider|continue|copilot|cody)/gi, "You are a coding assistant"],
+      [/you are an? (?:ai )?(?:coding |code )?agent/gi, "You are a coding assistant"],
+      [/cc_entrypoint\s*=\s*(?:cli|vscode|jetbrains|gui)/gi, "client_entrypoint=editor"],
+      [/claude.?code.+issues/gi, "coding-assistant issues"],
+      [/give feedback.+claude.?code/gi, "give feedback about the coding assistant"],
+      [/you are .{0,30}(?:powerful )?ai agent/gi, "You are a coding assistant"],
+      [/orchestration capabilities/gi, "coordination capabilities"],
+      [/OhMyOpenCode/gi, "coding workflow"],
+      [/<\/?agent-identity>/gi, ""],
+      [/<\/?Role>/gi, ""],
+      [/<\/?Behavior_Instructions>/gi, ""],
+    ];
+    const sanitizeSystemPrompt = (content) => {
+      const text = typeof content === "string"
         ? content
         : Array.isArray(content)
-          ? content.map((b) => (b && typeof b.text === "string" ? b.text : "")).join("\n")
+          ? content.map((block) => (block && typeof block.text === "string" ? block.text : "")).join("\n")
           : "";
+      if (!text) return content;
+      const sanitized = AGENT_MARKERS.reduce(
+        (value, [pattern, replacement]) => value.replace(pattern, replacement),
+        text,
+      );
+      if (sanitized === text) return content;
+      return typeof content === "string"
+        ? sanitized
+        : [{ type: "text", text: sanitized }];
+    };
     if (Array.isArray(transformed.messages)) {
-      transformed.messages = transformed.messages.map((message) => {
-        if (!message || message.role !== "system") return message;
-        const text = flatten(message.content);
-        if (!text) return message;
-        if (text.length > 2000 || AGENT_PATTERN.test(text)) {
-          return typeof message.content === "string"
-            ? { ...message, content: NEUTRAL_PROMPT }
-            : { ...message, content: [{ type: "text", text: NEUTRAL_PROMPT }] };
-        }
-        return message;
-      });
+      transformed.messages = transformed.messages.map((message) =>
+        !message || message.role !== "system"
+          ? message
+          : { ...message, content: sanitizeSystemPrompt(message.content) },
+      );
     }
 
     // CodeBuddy only surfaces model reasoning when the request carries the CLI's
