@@ -63,6 +63,7 @@ mkdir -p "$PARTS"
 if [ -f "$WORK/artifact-id" ] && [ "$(cat "$WORK/artifact-id")" != "$ARTIFACT_ID" ]; then
   echo ">> different artifact than staged chunks; resetting staging"
   rm -rf "$PARTS" "$WORK/artifact.zip" "$WORK/unpacked"
+  mkdir -p "$PARTS"   # must be re-created: the mkdir above ran before this reset
 fi
 printf '%s' "$ARTIFACT_ID" > "$WORK/artifact-id"
 
@@ -90,15 +91,18 @@ fetch_chunk() {
   for _attempt in 1 2 3 4 5 6 7 8; do
     tmp="$out.partial"
     rm -f "$tmp"
+    # Keep curl's stderr in a shared log: failing silently made a real breakage
+    # (e.g. an unwritable output dir) look like ordinary network slowness.
     curl -sSL -H "Authorization: Bearer $TOKEN" --max-time 300 \
       --retry 2 --retry-all-errors --retry-delay 2 \
-      --range "${start}-${end}" -o "$tmp" "$URL" 2>/dev/null || true
+      --range "${start}-${end}" -o "$tmp" "$URL" 2>>"$PARTS/errors.log" || true
     if [ "$(stat -c%s "$tmp" 2>/dev/null || echo 0)" = "$want" ]; then
       mv -f "$tmp" "$out"
       return 0
     fi
     rm -f "$tmp"
   done
+  echo "chunk $idx failed (wanted $want bytes)" >> "$PARTS/errors.log"
   return 1
 }
 export -f fetch_chunk
