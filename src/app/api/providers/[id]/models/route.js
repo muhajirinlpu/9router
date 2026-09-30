@@ -19,8 +19,11 @@ const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fe
 // The /codex/models endpoint gates each entry by minimal_client_version against this
 // value, and codex CLI's own manifest (openai/codex codex-rs/models-manager/models.json)
 // already requires 0.144.0 for its newest models, so a stale client_version here comes
-// back 200 with those entries quietly missing instead of erroring.
-const CODEX_CLIENT_VERSION = "0.144.6";
+// back 200 with those entries quietly missing instead of erroring. Verified on the live
+// endpoint: gpt-6.1-sol is absent at 0.158.x and appears from 0.159.0 onward, and the
+// same floor applies to inference (below it the backend answers 400 "not supported when
+// using Codex with a ChatGPT account"). Keep this >= the executor's CODEX_CLI_VERSION.
+const CODEX_CLIENT_VERSION = "0.159.2";
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
 
 const parseOpenAIStyleModels = (data) => {

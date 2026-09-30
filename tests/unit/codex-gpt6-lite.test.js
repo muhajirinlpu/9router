@@ -10,7 +10,7 @@ const credentials = { connectionId: "fixture", accessToken: "fixture-token" };
 afterEach(() => vi.restoreAllMocks());
 
 describe("Codex GPT-6 Sol/Luna transport", () => {
-  it.each(["gpt-6-sol", "gpt-6-luna"])("lists %s with Codex capabilities", (model) => {
+  it.each(["gpt-6-sol", "gpt-6-luna"])( "lists %s with Codex capabilities", (model) => {
     const entry = getModelsByProviderId("codex").find((item) => item.id === model);
     expect(entry?.responsesLite).toBe(true);
     expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
@@ -21,6 +21,55 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     });
     expect(getThinkingLevels("codex", model)).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(getThinkingLevels("codex", `${model}(high)`)).toEqual(entry.thinkingLevels);
+  });
+
+  // gpt-6.1-sol is gated behind client_version >= 0.159.0 on the Codex backend, both for the
+  // /codex/models catalog entry and for inference ("not supported when using Codex with a
+  // ChatGPT account" below that version). Its ladder additionally drops none/minimal, which
+  // the backend rejects outright rather than clamping, and adds ultra which the transport does
+  // not yet send.
+  it("lists gpt-6.1-sol as a Lite model with its own thinking ladder", () => {
+    const entry = getModelsByProviderId("codex").find((item) => item.id === "gpt-6.1-sol");
+    expect(entry?.responsesLite).toBe(true);
+    expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(getThinkingLevels("codex", "gpt-6.1-sol")).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(getCapabilitiesForModel("codex", "gpt-6.1-sol")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      thinkingFormat: "openai",
+    });
+  });
+
+  it("clamps unsupported gpt-6.1-sol reasoning values to low", () => {
+    for (const effort of ["none", "minimal"]) {
+      const body = new CodexExecutor().transformRequest("gpt-6.1-sol", {
+        model: "gpt-6.1-sol", input: "hello", reasoning: { effort },
+      }, true, credentials);
+      expect(body.reasoning.effort).toBe("low");
+      expect(body.reasoning.context).toBe("all_turns");
+    }
+  });
+
+  it("sends gpt-6.1-sol with the Lite header and a client version past its gate", async () => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
+      ok: true, status: 200, headers: new Map(),
+    });
+    await new CodexExecutor().execute({
+      model: "gpt-6.1-sol",
+      body: { model: "gpt-6.1-sol", input: "hello", instructions: "Do the task" },
+      stream: true,
+      credentials,
+    });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+    // 0.159.0 is gpt-6.1-sol's floor; anything lower returns
+    // "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."
+    const sent = options.headers.version;
+    expect(sent.localeCompare("0.159.0", undefined, { numeric: true })).toBeGreaterThanOrEqual(0);
+    expect(body.input[0].type).toBe("additional_tools");
+    expect(body.reasoning.context).toBe("all_turns");
   });
 
   it("keeps a native Responses Lite request intact", () => {
@@ -84,7 +133,11 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     const body = JSON.parse(options.body);
     expect(url).toBe("https://chatgpt.com/backend-api/codex/responses");
     expect(options.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
-    expect(options.headers.version).toBe("0.155.0");
+    // Assert the floor, not a literal: this header must satisfy both the 5.6 family's and
+    // gpt-6.1-sol's client-version gates, so a hardcoded literal here just needs rewriting
+    // on every Codex CLI bump.
+    expect(options.headers.version.localeCompare("0.159.0", undefined, { numeric: true }))
+      .toBeGreaterThanOrEqual(0);
     expect(body.model).toBe("gpt-6-luna");
     expect(body.instructions).toBe("");
     expect(body.input[0].type).toBe("additional_tools");
