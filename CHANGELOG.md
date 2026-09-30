@@ -7,9 +7,10 @@ Fork release on upstream v0.5.91 (no newer upstream release exists yet).
   behind `client_version >= 0.159.0` on both the model catalog and inference, so it was
   invisible here regardless of the registry entry; the transport's version constant moves
   0.155.0 -> 0.159.2 and the models route's catalog version 0.144.6 -> 0.159.2 to clear it.
-  Its ladder drops `none`/`minimal` (rejected outright, not clamped) and carries its own
-  `thinkingLevels`. `ultra` is advertised by the catalog but not yet expressible by the
-  transport, so it is deliberately excluded.
+  Its ladder drops `none`/`minimal` — the backend rejects them rather than clamping, so the
+  registry lists `low,medium,high,xhigh,max` and `normalizeReasoningEffort` clamps the two
+  unsupported values to `low` before dispatch. The catalog also advertises `ultra`, but the
+  request validator rejects it outright; the adapter resolves `ultra` to `max`.
 - **CI**: gate `unit/codex-gpt6-lite.test.js` in the arm64 bundle workflow so the GPT-6 Lite
   transport cannot regress silently.
 

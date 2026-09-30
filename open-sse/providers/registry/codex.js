@@ -3,7 +3,10 @@ import { withCodexReviewModels } from "../models/helpers.js";
 // Codex CLI version seen by OpenAI's backend — single source for the Version /
 // User-Agent identity headers. Bump when the installed codex CLI is upgraded.
 const CODEX_CLI_VERSION = "0.159.2";
-// GPT-6 Sol/Luna accept nothing below "low" (the backend rejects none/minimal outright).
+// GPT-6 Sol/Luna accept nothing below "low": the backend rejects none/minimal outright, so
+// normalizeReasoningEffort clamps those to "low" before dispatch. "ultra" is catalog-only
+// vocabulary — the request validator rejects it — and resolves to "max", which is why max
+// must stay listed here.
 const GPT_6_LITE_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 // gpt-6.1-sol shares that floor but is additionally gated behind CODEX_CLI_VERSION.
 const GPT_6_1_SOL_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
