@@ -123,7 +123,9 @@ jobs:
         run: |
           set -euo pipefail
           cd tests && npm install --no-audit --no-fund
-          npx vitest run unit/capabilities.test.js unit/codex-tool-normalization.test.js
+          # codex-gpt6-lite covers the GPT-6 Lite transport (registry flags, request shape,
+          # client-version floor) which is fork-specific tuning and easy to regress.
+          npx vitest run unit/capabilities.test.js unit/codex-tool-normalization.test.js unit/codex-gpt6-lite.test.js
 
       - name: Package release bundle
         id: pack

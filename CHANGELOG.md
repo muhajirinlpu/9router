@@ -1,3 +1,21 @@
+# v0.5.92-fork.1 (2026-09-30)
+
+Fork release on upstream v0.5.91 (no newer upstream release exists yet).
+
+## Features
+- **Codex**: add GPT-6.1 Sol (`gpt-6.1-sol`), released 2026-09-29. The Codex backend gates it
+  behind `client_version >= 0.159.0` on both the model catalog and inference, so it was
+  invisible here regardless of the registry entry; the transport's version constant moves
+  0.155.0 -> 0.159.2 and the models route's catalog version 0.144.6 -> 0.159.2 to clear it.
+  Its ladder drops `none`/`minimal` (rejected outright, not clamped) and carries its own
+  `thinkingLevels`. `ultra` is advertised by the catalog but not yet expressible by the
+  transport, so it is deliberately excluded.
+- **CI**: gate `unit/codex-gpt6-lite.test.js` in the arm64 bundle workflow so the GPT-6 Lite
+  transport cannot regress silently.
+
+No `gpt-6.1-luna` exists: it appears at no client version on the catalog endpoint and OpenAI
+published no such model.
+
 # v0.5.91 (2026-09-26)
 
 ## Features
