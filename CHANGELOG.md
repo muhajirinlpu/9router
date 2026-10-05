@@ -1,25 +1,60 @@
-# v0.5.92-fork.1 (2026-09-30)
+# v0.5.95-fork.1 (2026-10-05)
 
-Fork release on upstream v0.5.91 (no newer upstream release exists yet).
+Fork release on upstream v0.5.95. Reconciles GPT-6.1 Sol support, which the fork and upstream
+added independently a day apart, and keeps the fork's stricter client-version handling.
+
+## Notes
+- **Codex**: `gpt-6.1-sol` is supplied by upstream's registry entry. The fork's separate
+  `GPT_6_1_SOL_THINKING_LEVELS` constant is dropped in favour of upstream's shared
+  `GPT_6_LITE_THINKING_LEVELS` — the two ladders are identical, so the fork's constant added
+  nothing.
+- **Codex**: the client version is pinned to 0.159.2 (fork value) rather than upstream's
+  0.159.0. The Codex backend gates `gpt-6.1-sol` behind `client_version >= 0.159.0` on BOTH the
+  model catalog and inference, answering 400 "not supported when using Codex with a ChatGPT
+  account" below that floor; 0.159.2 clears it with margin and still serves every pre-existing
+  model.
+- **Models route**: takes upstream's architecture, which sources `client_version` from
+  `codexProvider.transport.cliVersion` instead of duplicating a literal. The fork's separate
+  `CODEX_CLIENT_VERSION` constant is therefore removed — the single-source form cannot drift
+  from the transport, which is what the fork's duplicate was guarding against by hand.
+- **Tests**: assert the 0.159.0 gate as a floor rather than a literal, so a future Codex CLI
+  bump does not just require rewriting a constant, and assert the `User-Agent` agrees with the
+  `version` header.
+
+# v0.5.95 (2026-10-01)
 
 ## Features
-- **Codex**: add GPT-6.1 Sol (`gpt-6.1-sol`), released 2026-09-29. The Codex backend gates it
-  behind `client_version >= 0.159.0` on both the model catalog and inference, so it was
-  invisible here regardless of the registry entry; the transport's version constant moves
-  0.155.0 -> 0.159.2 and the models route's catalog version 0.144.6 -> 0.159.2 to clear it.
-  Its ladder drops `none`/`minimal` — the backend rejects them rather than clamping, so the
-  registry lists `low,medium,high,xhigh,max` and `normalizeReasoningEffort` clamps the two
-  unsupported values to `low` before dispatch. The catalog also advertises `ultra`, but the
-  request validator rejects it outright; the adapter resolves `ultra` to `max`.
-- **CI**: gate `unit/codex-gpt6-lite.test.js` in the arm64 bundle workflow so the GPT-6 Lite
-  transport cannot regress silently.
+- **Providers**: add Meta Muse provider with OAuth login and model catalog; add v1m System One provider
+- **GLM**: add Z.ai OAuth login to GLM Coding (dual-auth)
+- **Codex**: add GPT-6.1 Sol; expose 1M context variants for GPT-6 and GPT-5.6; add gpt-daybreak/reserve models and route bare `gpt-5.x`/`gpt-6.x` slugs to codex
+- **Claude**: add Claude Sonnet 5.5 (plus `claude-opus-5.5` models in the Kiro registry)
+- **CLI**: add `connect` command for remote 9Router servers
+- **Providers**: per-provider custom header overrides from the registry
+- **Agnes**: seed the 2.5/3.0 model ids in the registry
+- **Usage**: sync `?provider=` URL param with provider filter for bookmarkable deep links (#4395)
+- **Dashboard**: drop NEW badges in sidebar, mark 9Remote as HOT
 
-No `gpt-6.1-luna` exists: it appears at no client version on the catalog endpoint and OpenAI
-published no such model.
+## Fixes
+- **Claude**: preserve intentional prefill from non-messages[] source formats; keep a trailing user turn so cleanup never yields assistant prefill
+- **Claude**: cache a tool loop's final tool results with the 4th breakpoint
+- **Claude**: resolve Sonnet 5.x to adaptive thinking so no forged thinking placeholders are sent; inject unsigned thinking placeholders for opencode-go DeepSeek `/messages` (#4436)
+- **Thinking**: add `xhigh` to claude-adaptive thinking levels
+- **Claude**: keep a user turn whose only block is `container_upload`
+- **Capabilities**: publish real GPT-6/GPT-5.4+ context windows and combo token limits
+- **Responses**: wait for real usage before emitting `response.completed`, bounded by a 3s watchdog
+- **Codex**: stop refresh-token reuse that logs accounts out on auto-ping; preserve hosted web search on GPT-6 Sol/Luna; remove ghost models
+- **Grok CLI**: send Grok CLI 1.0.44 so proxy stops returning HTTP 426
+- **Proxy**: auto-fallback to insecure TLS on self-signed cert errors; hold strictProxy when no proxy resolves
+- **Translator**: strip `errorMessage` and other non-standard schema keywords from Gemini tool schemas; dedupe same-name tools for DeepSeek models (#3333)
+- **Codebuddy**: parse the 6004 rate limit error and extract `resetsAtMs`; forward `recurring` for codebuddy-intl quota packs (#4422)
+- **CLI Tools**: replace `sk_9router` placeholder with first active dashboard API key
+- **Dashboard**: exclude hidden providers from usage stats provider list
+- **Capabilities**: add deepseek-v4-1-flash vision alias; add zed to live catalog providers
 
 # v0.5.91 (2026-09-26)
 
 ## Features
+- **Web Search & Fetch**: add TinyFish Search and Fetch with one API-key connection, normalized results, and official provider icon
 - **Providers**: add Token Harbor provider and four OpenAI-compatible aggregator providers (dahl, atria, agnes, bai)
 - **Claude**: forward `x-claude-code-session-id` on OAuth requests; merge client `anthropic-beta` flags and forward rate-limit headers; return thinking text to OpenAI-format clients
 - **Codex**: add GPT-6 Sol and Luna support
