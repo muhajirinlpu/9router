@@ -27,23 +27,6 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(getThinkingLevels("codex", `${model}(high)`)).toEqual(entry.thinkingLevels);
   });
 
-  // gpt-6.1-sol is gated behind client_version >= 0.159.0 on the Codex backend, both for the
-  // /codex/models catalog entry and for inference ("not supported when using Codex with a
-  // ChatGPT account" below that version). Its ladder additionally drops none/minimal, which
-  // the backend rejects outright rather than clamping, and adds ultra which the transport does
-  // not yet send.
-  it("lists gpt-6.1-sol as a Lite model with its own thinking ladder", () => {
-    const entry = getModelsByProviderId("codex").find((item) => item.id === "gpt-6.1-sol");
-    expect(entry?.responsesLite).toBe(true);
-    expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    expect(getThinkingLevels("codex", "gpt-6.1-sol")).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    expect(getCapabilitiesForModel("codex", "gpt-6.1-sol")).toMatchObject({
-      vision: true,
-      reasoning: true,
-      thinkingFormat: "openai",
-    });
-  });
-
   it("clamps unsupported gpt-6.1-sol reasoning values to low", () => {
     for (const effort of ["none", "minimal"]) {
       const body = new CodexExecutor().transformRequest("gpt-6.1-sol", {

@@ -194,6 +194,10 @@ export const PROVIDER_CAPABILITIES = {
   },
   "codex": {
     "gpt-6-astra":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
+    // gpt-6.1-sol needs an EXACT key here: it has no entry of its own, so without this it
+    // falls through to the generic `*gpt-6*` pattern, which carries the OpenAI *API* window
+    // (1.05M) rather than this route's. Codex OAuth serves the whole gpt-6 family at 272k.
+    "gpt-6.1-sol":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     "gpt-6-sol":                 { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     "gpt-6-luna":                { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     "gpt-6-astra[1m]":           CODEX_EXTENDED_CAPS,
